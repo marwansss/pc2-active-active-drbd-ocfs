@@ -1,0 +1,18 @@
+#Define first play to update server apt repo
+- hosts: all
+  gather_facts: true
+  pre_tasks:
+
+  - name: update apt packages
+    ansible.builtin.apt:
+      update_cache: true
+
+#define second play, which include roles to setup San Server and ocfs cluster intiators
+- hosts: all
+  gather_facts: true
+  roles:
+  - role: OCFS
+    tags: OCFS
+
+  - role: DRBD
+    tags: DRBD

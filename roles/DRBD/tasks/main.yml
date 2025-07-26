@@ -1,0 +1,86 @@
+# ---
+# # tasks file for DRBD
+# # tasks file for drbd
+
+# - name: Install DRBD Packages
+#   ansible.builtin.apt:
+#     name: "{{item}}"
+#     state: present
+#   loop:
+#     - drbd-utils
+  
+
+# - name: Start and disable service drbd
+#   ansible.builtin.service:
+#     name: drbd
+#     enabled: false
+#     state: started
+
+
+# - name: Copy  drbd config file to /etc/drbd.d/
+#   ansible.builtin.copy:
+#     src: /home/marwan/Desktop/active-active-DRBD/roles/DRBD/files/
+#     dest: /etc/drbd.d/
+#     owner: root
+#     group: root
+#     mode: '0755'
+#   when: inventory_hostname in groups['main-workers']
+
+
+
+# - name: Run some shell commands to configure drbd devices
+#   ansible.builtin.shell: |
+#     modprobe drbd
+#     drbdadm create-md r0
+#     drbdadm up r0 && touch r0_created
+#   args: 
+#     creates: r0_created
+    
+# - name: Run some shell commands to configure primary drbd device
+#   ansible.builtin.shell: |
+#     drbdadm -- --overwrite-data-of-peer primary r0
+#     sleep 13m
+#   when: ansible_host == '10.0.3.156'
+
+- name: Ensure 'allow-two-primaries' is configured in DRBD resource (on both nodes)
+  ansible.builtin.blockinfile:
+    path: /etc/drbd.d/r0.res
+    marker: "# {mark} ANSIBLE MANAGED BLOCK allow-two-primaries"
+    insertafter: 'resource r0 {'
+    block: |
+      net {
+          allow-two-primaries;
+      }
+
+
+
+- name: Run some shell commands to configure primary drbd device (on both nodes)
+  ansible.builtin.shell: |
+    drbdadm disconnect r0
+    drbdadm connect r0
+    drbdadm primary r0
+
+
+
+- name: make ocfs fs for dbrd device (on one node only)
+  ansible.builtin.shell:
+    cmd: |
+       mkfs.ocfs2 -N 2 -L "Pc2DrbdOcfs2" /dev/drbd0
+       touch ocfs2fs
+  args:
+    creates: ocfs2fs
+  when: ansible_host == '10.0.3.156'
+
+- name: register-cluster Pc2DrbdOcfs2. (on both nodes)
+  ansible.builtin.shell:
+    cmd: |
+       o2cb register-cluster Pc2DrbdOcfs2
+
+
+- name:  Create a mount point. (on both nodes)
+  ansible.builtin.shell:
+    cmd: |
+       mount -L Pc2DrbdOcfs2 /ccs/pc2datadir_pc2
+       touch Mount-Point_mounted
+  args:
+    creates: Mount-Point_mounted

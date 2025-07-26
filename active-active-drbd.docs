@@ -1,0 +1,196 @@
+														1) install drbd
+ sudo apt install -y drbd-utils  (on both nodes)
+2) modify the config file of drbd /etc/drbd.d/r0.res and the /etc/drbd.d/global_common.conf(on both nodes)
+   resource r0 {
+    on worker1-3 {
+        device    /dev/drbd0;      # DRBD device name
+        disk      /dev/sdb;       # Backing block device (e.g., a partition)
+        address   10.0.3.154:7788;
+        meta-disk internal;        # Meta-data stored internally or on a dedicated partition
+    }
+
+    on worker1-5 {
+        device    /dev/drbd0;      # DRBD device name (must match node1)
+        disk      /dev/sdb;       # Backing block device (same as node1)
+        address   10.0.3.156:7788;
+        meta-disk internal;        # Meta-data stored internally or on a dedicated partition
+    }
+
+   # net {
+   #     allow-two-primaries;
+   # }
+
+}
+
+#global conf
+
+# DRBD is the result of over a decade of development by LINBIT.
+# In case you need professional services for DRBD or have
+# feature requests visit http://www.linbit.com
+
+global {
+        usage-count no;
+
+        # Decide what kind of udev symlinks you want for "implicit" volumes
+        # (those without explicit volume <vnr> {} block, implied vnr=0):
+        # /dev/drbd/by-resource/<resource>/<vnr>   (explicit volumes)
+        # /dev/drbd/by-resource/<resource>         (default for implict)
+        udev-always-use-vnr; # treat implicit the same as explicit volumes
+
+        # minor-count dialog-refresh disable-ip-verification
+        # cmd-timeout-short 5; cmd-timeout-medium 121; cmd-timeout-long 600;
+}
+
+common {
+        protocol C;
+        handlers {
+                # These are EXAMPLE handlers only.
+                # They may have severe implications,
+                # like hard resetting the node under certain circumstances.
+                # Be careful when choosing your poison.
+
+                # pri-on-incon-degr "/usr/lib/drbd/notify-pri-on-incon-degr.sh; /usr/lib/drbd/notify-emergency-reboot.sh; echo b > /proc/sysrq-trigger ; reboot -f";
+                # pri-lost-after-sb "/usr/lib/drbd/notify-pri-lost-after-sb.sh; /usr/lib/drbd/notify-emergency-reboot.sh; echo b > /proc/sysrq-trigger ; reboot -f";
+                # local-io-error "/usr/lib/drbd/notify-io-error.sh; /usr/lib/drbd/notify-emergency-shutdown.sh; echo o > /proc/sysrq-trigger ; halt -f";
+                # fence-peer "/usr/lib/drbd/crm-fence-peer.sh";
+                # split-brain "/usr/lib/drbd/notify-split-brain.sh root";
+                # out-of-sync "/usr/lib/drbd/notify-out-of-sync.sh root";
+                # before-resync-target "/usr/lib/drbd/snapshot-resync-target-lvm.sh -p 15 -- -c 16k";
+                # after-resync-target /usr/lib/drbd/unsnapshot-resync-target-lvm.sh;
+                # quorum-lost "/usr/lib/drbd/notify-quorum-lost.sh root";
+        }
+
+        startup {
+                # wfc-timeout degr-wfc-timeout outdated-wfc-timeout wait-after-sb
+        }
+
+        options {
+                # cpu-mask on-no-data-accessible
+
+                # RECOMMENDED for three or more storage nodes with DRBD 9:
+                # quorum majority;
+                # on-no-quorum suspend-io | io-error;
+        }
+
+        disk {
+                # size on-io-error fencing disk-barrier disk-flushes
+                # disk-drain md-flushes resync-rate resync-after al-extents
+                # c-plan-ahead c-delay-target c-fill-target c-max-rate
+                # c-min-rate disk-timeout
+        }
+
+        net {
+                # protocol timeout max-epoch-size max-buffers
+                # connect-int ping-int sndbuf-size rcvbuf-size ko-count
+                # allow-two-primaries cram-hmac-alg shared-secret after-sb-0pri
+                # after-sb-1pri after-sb-2pri always-asbp rr-conflict
+                # ping-timeout data-integrity-alg tcp-cork on-congestion
+                # congestion-fill congestion-extents csums-alg verify-alg
+                # use-rle
+        }
+}
+
+
+
+3) load drbd module in the kernel
+modprobe drbd (on both nodes)
+
+4) sudo drbdadm create-md r0 (on both nodes)
+5) sudo drbdadm up r0 (on both nodes)
+
+6) on one node run :
+sudo drbdadm -- --overwrite-data-of-peer primary r0 
+
+7) uncomment allow two primaries in the drbd config file
+   resource r0 {
+    on worker1-3 {
+        device    /dev/drbd0;      # DRBD device name
+        disk      /dev/sdb;       # Backing block device (e.g., a partition)
+        address   10.0.3.154:7788;
+        meta-disk internal;        # Meta-data stored internally or on a dedicated partition
+    }
+
+    on worker1-5 {
+        device    /dev/drbd0;      # DRBD device name (must match node1)
+        disk      /dev/sdb;       # Backing block device (same as node1)
+        address   10.0.3.156:7788;
+        meta-disk internal;        # Meta-data stored internally or on a dedicated partition
+    }
+
+    net {
+        allow-two-primaries;
+    }
+
+}
+
+
+8) on both nodes run : 
+sudo drbdadm disconnect r0
+sudo drbdadm connect r0
+sudo drbdadm primary r0
+
+#########################################################################################################################################################################################################
+										configure ocfs cluster
+										
+										
+1) Define the cluster.
+  sudo o2cb add-cluster Pc2DrbdOcfs2
+  
+2) Add nodes to the cluster(intiator).
+
+    sudo o2cb add-node Pc2DrbdOcfs2 worker1-5 --ip 10.0.3.156
+    sudo o2cb add-node Pc2DrbdOcfs2 worker1-3 --ip 10.0.3.154
+
+ 
+ 
+ 
+ 
+ 
+4) Copy the cluster configuration file to each cluster node.
+Copy the cluster /etc/ocfs2/cluster.conf file to each node in the cluster.
+
+
+5)(Optional) Show information about the cluster.   (san -> heartbeat(configured) snapshot)
+Run the following command to display information about the cluster:
+    sudo o2cb list-cluster Pc2DrbdOcfs2
+
+
+
+********************RUN: sudo dpkg-reconfigure ocfs2-tools
+
+7)Configure the node.
+
+sudo systemctl enable o2cb
+sudo systemctl enable ocfs2
+sudo systemctl start o2cb
+
+
+to check the status of the cluster stack 
+
+sudo systemctl status o2cb
+
+
+
+8)Configure the sysctlkernel parameters.
+Edit the /etc/sysctl.d/99-sysctl.conf file to configure the following kernel settings for cluster operations:
+
+kernel.panic = 30
+kernel.panic_on_oops = 1
+
+
+9)sudo sysctl -p
+
+
+10) Create an OCFS2 volume
+    sudo mkfs.ocfs2 -N 2 -L "Pc2DrbdOcfs2" /dev/drbd0 (on one node)
+    
+11) sudo o2cb start-heartbeat Pc2DrbdOcfs2  (both nodes) to make cluster online 
+    sudo o2cb register-cluster Pc2DrbdOcfs2 (both nodes)  
+    
+
+
+12) Create a mount point.
+    sudo mkdir /u01
+    sudo mount -L Pc2DrbdOcfs2 /ccs/pc2datadir_pc2
+    then add in fstab for perminent mount
+

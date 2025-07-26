@@ -1,0 +1,108 @@
+---
+# tasks file for Cluster_Config
+
+
+- name: Install ocfs tools
+  ansible.builtin.apt:
+    name: ocfs2-tools
+    state: present
+
+- name: Define the cluster/Add nodes to the cluster (Run on one node only)
+  ansible.builtin.shell:
+    cmd: |
+       o2cb add-cluster Pc2DrbdOcfs2
+       o2cb add-node Pc2DrbdOcfs2 worker1-5 --ip 10.0.3.156
+       o2cb add-node Pc2DrbdOcfs2 worker1-3 --ip 10.0.3.154
+       touch Adding_Nodes
+  args:
+    creates: Adding_Nodes
+  when: ansible_host == '10.0.3.156'
+
+
+
+- name: copy file from machine1 to local
+  fetch: 
+    src: /etc/ocfs2/cluster.conf
+    dest: /home/marwan/Desktop/active-active-DRBD/roles/OCFS/files
+  when: inventory_hostname == '10.0.3.156'
+    
+
+- name: copy file from local to machine2
+  copy: 
+    src: /home/marwan/Desktop/active-active-DRBD/roles/OCFS/files/10.0.3.156/etc/ocfs2/cluster.conf
+    dest: /etc/ocfs2/cluster.conf
+  when: inventory_hostname == '10.0.3.154'
+
+
+- name: Preseed - Start OCFS2 cluster at boot time
+  ansible.builtin.debconf:
+    name: ocfs2-tools
+    question: ocfs2-tools/start-o2cb
+    value: true
+    vtype: boolean
+
+- name: Preseed - Cluster name to start at boot
+  ansible.builtin.debconf:
+    name: ocfs2-tools
+    question: ocfs2-tools/cluster-name
+    value: Pc2DrbdOcfs2
+    vtype: string
+
+- name: Preseed - O2CB heartbeat threshold
+  ansible.builtin.debconf:
+    name: ocfs2-tools
+    question: ocfs2-tools/heartbeat-threshold
+    value: 31       
+    vtype: string
+
+- name: Preseed - O2CB idle timeout
+  ansible.builtin.debconf:
+    name: ocfs2-tools
+    question: ocfs2-tools/idle-timeout
+    value: 30000
+    vtype: string
+
+- name: Preseed - O2CB keepalive delay
+  ansible.builtin.debconf:
+    name: ocfs2-tools
+    question: ocfs2-tools/keepalive-delay
+    value: 2000
+    vtype: string
+
+- name: Preseed - O2CB reconnect delay
+  ansible.builtin.debconf:
+    name: ocfs2-tools
+    question: ocfs2-tools/reconnect-delay
+    value: 2000
+    vtype: string
+
+- name: Run dpkg-reconfigure silently
+  ansible.builtin.command: dpkg-reconfigure -f noninteractive ocfs2-tools
+
+- name: Start and enabled o2cb
+  ansible.builtin.service:
+    name: o2cb
+    enabled: yes
+    state: restarted
+
+- name: Enabled ocfs2
+  ansible.builtin.service:
+    name: ocfs2
+    enabled: yes
+
+- name: Configure the sysctlkernel parameters.
+  ansible.builtin.copy:
+    src: /home/marwan/Desktop/active-active-DRBD/roles/OCFS/files/99-sysctl.conf
+    dest: /etc/sysctl.d/99-sysctl.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+
+- name: Configure the sysctlkernel.
+  ansible.builtin.shell:
+    cmd: |
+       sysctl -p
+  
+
+
